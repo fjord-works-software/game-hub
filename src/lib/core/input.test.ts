@@ -152,3 +152,32 @@ describe('sendAction (on-screen controls)', () => {
 		expect(received).toHaveLength(3);
 	});
 });
+
+describe('bindInput pointer presses', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('reports a press straight away, relative to the element, before it becomes a tap', () => {
+		vi.stubGlobal('window', new EventTarget());
+		const element = Object.assign(new EventTarget(), {
+			getBoundingClientRect: () => ({ left: 10, top: 20 }),
+			setPointerCapture: () => {}
+		}) as unknown as HTMLElement;
+		const received: string[] = [];
+		bindInput(element, {
+			onPress: ({ x, y }) => received.push(`press ${x},${y}`),
+			onTap: ({ x, y }) => received.push(`tap ${x},${y}`)
+		});
+		const pointer = (type: string, button = 0) =>
+			element.dispatchEvent(Object.assign(new Event(type), { pointerId: 1, button, clientX: 60, clientY: 70 }));
+
+		pointer('pointerdown');
+		expect(received).toEqual(['press 50,50']);
+		pointer('pointerup');
+		expect(received).toEqual(['press 50,50', 'tap 50,50']);
+
+		pointer('pointerdown', 2); // right button
+		expect(received).toHaveLength(2);
+	});
+});

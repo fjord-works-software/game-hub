@@ -24,7 +24,7 @@ The project is on SvelteKit 3.0.1. Many docs, examples, and AI-model defaults as
 ## Initial Games (build in this order)
 1. Snake
 2. Falling Blocks (a falling-block puzzle, deliberately not named after the trademarked original)
-3. 8-bit style Deer Hunter
+3. Buck Fever (an 8-bit deer-hunting shooting gallery; planned as "Deer Hunter", renamed because that's an existing game series)
 
 Each game is self-contained; do not build all three at once. Scaffold the architecture first, implement Snake fully, confirm it works, then move to the next.
 
@@ -48,8 +48,9 @@ src/
         FallingBlocks.svelte
         logic.ts
         logic.test.ts
-      deer-hunter/
-        DeerHunter.svelte
+      buck-fever/
+        BuckFever.svelte
+        art.ts                     # the pixel art, drawn in code (no image files)
         logic.ts
         logic.test.ts
     core/
@@ -99,7 +100,7 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
 
 3. **Shared game loop.** All games use the same `gameLoop.ts` helper (fixed-timestep `requestAnimationFrame` wrapper) rather than each game writing its own loop.
 
-4. **Unified input handling.** `input.ts` provides a single interface for keyboard arrows/WASD and touch swipe gestures, so every game supports both phone touch and (if used) desktop keyboard without duplicating input code. Players who prefer buttons to swipes can turn on an on-screen D-pad from the pause menu (one setting for all games, off by default). A game opts in by describing its buttons in the registry's `controls` (a `TouchLayout`: the D-pad directions it uses plus any labelled buttons, each sending an action); `TouchControls.svelte` sends presses through `sendAction`, so they reach the game's `bindInput` handlers exactly like key presses and the game needs no code for them. Held buttons repeat like held keys, with `repeat` set, so games ignore repeats for actions that shouldn't repeat. Swipes keep working while the buttons are shown. `input.ts` also reports flicks (a fast swipe released quickly) through `onFlick`, alongside the swipes they make.
+4. **Unified input handling.** `input.ts` provides a single interface for keyboard arrows/WASD and touch swipe gestures, so every game supports both phone touch and (if used) desktop keyboard without duplicating input code. Players who prefer buttons to swipes can turn on an on-screen D-pad from the pause menu (one setting for all games, off by default). A game opts in by describing its buttons in the registry's `controls` (a `TouchLayout`: the D-pad directions it uses plus any labelled buttons, each sending an action); `TouchControls.svelte` sends presses through `sendAction`, so they reach the game's `bindInput` handlers exactly like key presses and the game needs no code for them. Held buttons repeat like held keys, with `repeat` set, so games ignore repeats for actions that shouldn't repeat. Swipes keep working while the buttons are shown. `input.ts` also reports flicks (a fast swipe released quickly) through `onFlick`, alongside the swipes they make, and presses (the moment a finger or mouse button goes down, before any tap) through `onPress`.
 
 5. **Consistent shell.** `GameShell.svelte` wraps every game with the same pause menu, score display, and back-to-menu button, so games only render their own play area.
 
@@ -110,7 +111,7 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
 8. **Fit whatever space the play area gets.** The play area can be any size and shape: a phone held upright (~390x700), a phone held sideways where the HUD becomes a sidebar (~680x370), a tablet, or a desktop window. It changes when the phone rotates or the window resizes. The shell already keeps it clear of notches and the home indicator, so games never handle safe areas themselves. Each game:
    - sizes its canvas with `fitCanvas` (`core/canvas.ts`) and redraws in its `onResize`; a resize never resets or pauses the game.
    - keeps `logic.ts` in its own units (grid cells, world coordinates), never pixels. The component derives a scale and offset from the canvas size, centres the board, and fills the rest with the background (letterboxing).
-   - uses whole-pixel cell sizes (and `imageSmoothingEnabled = false` for sprites) so pixel art stays crisp.
+   - uses whole-pixel cell sizes (and `imageSmoothingEnabled = false` for sprites) so pixel art stays crisp. A pixel-art scene that should fill the space instead is scaled up by the next whole number with hard edges, then smoothly down to the exact size, so every pixel comes out the same size (see Buck Fever).
    - binds input to the whole canvas, so swipes and taps in the letterbox margins still count, and converts tap and pointer points to game units with the same scale and offset it draws with.
    - sizes text and anything else drawn on the canvas relative to the board, and makes any on-screen control or tap target at least 44 CSS px (`--touch-target`).
 
@@ -169,7 +170,7 @@ Deployment comes in Phase 1 rather than last, so base-path and GitHub Pages prob
 - Add Vitest, an `npm test` script, and a test step in the deploy workflow before the build.
 - `core/storage.ts`: `getScore(slug)` / `setScore(slug, value)` plus generic load/save, with keys of the form `game-hub:<slug>:<key>` so they can't collide with other sites on the shared domain. Wrap every `localStorage` call in try/catch (it can throw in private browsing) and fall back to defaults. Tested.
 - `core/gameLoop.ts`: fixed-timestep loop over `requestAnimationFrame` with an accumulator, exposing `start`, `stop`, `pause`, `resume`. Cap the elapsed time per frame so returning to a backgrounded tab doesn't fast-forward the game. Tested with an injected clock.
-- `core/input.ts`: maps arrows/WASD and swipes to named actions (`up`, `down`, `left`, `right`, `action`), and also reports taps and pointer position. Falling Blocks needs rotate/drop and Deer Hunter needs aim/shoot, so a directions-only API would have to break later. Attaches to an element and returns a cleanup function. Swipe detection tested.
+- `core/input.ts`: maps arrows/WASD and swipes to named actions (`up`, `down`, `left`, `right`, `action`), and also reports taps and pointer position. Falling Blocks needs rotate/drop and Buck Fever needs aim/shoot, so a directions-only API would have to break later. Attaches to an element and returns a cleanup function. Swipe detection tested.
 - `core/types.ts`: `GameProps`, the props every game component accepts: `paused`, `onScore`, `onGameOver`. The shell records the high score when `onGameOver` is called, so games don't touch storage for it.
 - `core/canvas.ts`: sizes a canvas to its container and scales it by `devicePixelRatio` so games are sharp on phones.
 - `core/GameShell.svelte`: score HUD, pause menu (resume / restart / back to menu), back button. Pauses automatically on `visibilitychange`. Restart remounts the game with `{#key}`, so games need no reset logic of their own. The play area gets `touch-action: none` so swipes don't scroll the page or trigger pull-to-refresh.
@@ -195,14 +196,16 @@ Deployment comes in Phase 1 rather than last, so base-path and GitHub Pages prob
 - Should need no changes to `core/`. If it does, make the core change in its own commit and re-check Snake. (Falling Blocks needed three, all in `input.ts` and `TouchControls.svelte`: flick gestures, repeats from held on-screen buttons, and labelled buttons via `TouchLayout`. Snake was re-checked afterwards.)
 - **Done when:** the Phase 4 checks pass for Falling Blocks, and Snake still passes them.
 
-### Phase 6 — 8-bit Deer Hunter (after Phase 5 sign-off)
-- Same pattern: `deer-hunter/logic.ts` with tests, then `DeerHunter.svelte`, then one registry line.
-- The game most likely to need new core features (sprite-sheet loading, maybe audio). Sprites and sounds must be imported through the build or placed in `static/` so the service worker precaches them; never load them from external URLs.
-- Layout (rule 8): a wide, low-resolution 8-bit scene (e.g. 16:9, scaled up by a whole number) suits a phone held sideways. Held upright it letterboxes into a small strip. Orientation can't be locked per game (iOS doesn't support locking, and the manifest's `orientation` would apply to every game), so show a "turn your phone sideways" hint when the play area is taller than it is wide.
-- Aiming: on touch, tap to shoot. On desktop, `onPointerMove` drives a crosshair and a click shoots. Convert points to world coordinates with the drawing scale and offset, and keep hit areas at least 44 CSS px on a phone, enlarging them beyond the sprite if needed.
-- **Done when:** the Phase 4 checks pass for Deer Hunter, and Snake and Falling Blocks still pass them.
+### Phase 6 — Buck Fever (after Phase 5 sign-off)
+- Same pattern: `buck-fever/logic.ts` with tests, then `BuckFever.svelte`, then one registry line.
+- Rules (built): rounds of 10 deer, run one at a time in rounds 1–2 and in pairs after that, each lane its own. Each wave gets 3 shells. Deer run across the meadow, stopping to graze, and every shot startles the ones still standing into a faster run; when more than one is running, each startled deer turns back or runs on at random. Trees (two, three from round 3) are replanted at random places each round, between the lanes: deer can run behind them, and a tree in front of a deer stops the shot. Hits score 100 (doe) or 300 (buck) times the round, and a perfect round adds 1000 times the round. Hit 6 of 10 to reach the next round, rising to 9 from round 7; fall short and the game ends. Deer get faster each round up to round 10.
+- Art (built): drawn in code in `art.ts` from whole-pixel shapes onto a 320x180 scene canvas, so there are no sprite sheets to load and no core change for them. Any future sprites and sounds must be imported through the build or placed in `static/` so the service worker precaches them; never load them from external URLs.
+- Sound: left out for now. Adding it means a shared Sound On/Off setting in the pause menu (a core change), and audio that's generated in code or precached.
+- Layout (rule 8): a wide, low-resolution 8-bit scene (320x180, scaled to fill the play area: up by the next whole number with hard edges, then smoothly down to fit) suits a phone held sideways. Held upright it letterboxes into a small strip. Orientation can't be locked per game (iOS doesn't support locking, and the manifest's `orientation` would apply to every game), so show a "turn your phone sideways" hint when the play area is taller than it is wide.
+- Aiming: on touch, tap to shoot. On desktop, `onPointerMove` drives a crosshair and a click shoots; arrow keys also move the crosshair and Space shoots. Shots fire on contact through `onPress` (a core addition to `input.ts`, in its own commit), since a tap only registers when the finger lifts. Convert points to world coordinates with the drawing scale and offset, and keep hit areas at least 44 CSS px on a phone, enlarging them beyond the sprite if needed.
+- **Done when:** the Phase 4 checks pass for Buck Fever, and Snake and Falling Blocks still pass them.
 
 ## Explicitly Out of Scope for Now
-- Falling Blocks and Deer Hunter implementations (build after Snake is confirmed working)
+- Sound (see Phase 6)
 - Multiplayer or online leaderboards (contradicts offline-first goal)
 - Any backend/server component

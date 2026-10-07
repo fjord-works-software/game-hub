@@ -29,5 +29,11 @@ export const games: GameEntry[] = [
 				{ action: 'action', label: 'Drop' }
 			]
 		}
+	},
+	{
+		slug: 'buck-fever',
+		name: 'Buck Fever',
+		// Tap or click to shoot, so no on-screen buttons (keyboard players aim with the arrows).
+		component: () => import('./buck-fever/BuckFever.svelte')
 	}
 ];

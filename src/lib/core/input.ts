@@ -24,6 +24,12 @@ export interface InputHandlers {
 	/** A short press without movement (touch, pen, or mouse click), at the point it started. */
 	onTap?: (point: Point) => void;
 	/**
+	 * A finger, pen, or the primary mouse button went down, reported at once (a tap waits for it to
+	 * lift). For things that should happen on contact, like firing a shot. Every press is reported,
+	 * including ones that go on to become taps or swipes.
+	 */
+	onPress?: (point: Point) => void;
+	/**
 	 * A fast, long swipe released quickly (e.g. a flick down to hard-drop). It's reported as well as
 	 * the swipes it made, so games that don't handle flicks still see the swipes.
 	 */
@@ -160,8 +166,8 @@ function isInteractive(target: EventTarget | null): boolean {
 }
 
 /**
- * Sends keyboard actions (arrows/WASD, Space/Enter), on-screen control presses, and pointer swipes,
- * flicks, taps, and movement on `element` to `handlers`. Keyboard input is read from the whole window.
+ * Sends keyboard actions (arrows/WASD, Space/Enter), on-screen control presses, and pointer presses,
+ * swipes, flicks, taps, and movement on `element` to `handlers`. Keyboard input is read from the whole window.
  * Returns a cleanup function.
  */
 export function bindInput(element: HTMLElement, handlers: InputHandlers, options?: GestureOptions): () => void {
@@ -193,7 +199,9 @@ export function bindInput(element: HTMLElement, handlers: InputHandlers, options
 
 	function onPointerDown(event: PointerEvent) {
 		if (event.button !== 0) return; // primary button only; touch and pen also report 0
-		gestures.down(event.pointerId, toPoint(event), event.timeStamp);
+		const point = toPoint(event);
+		handlers.onPress?.(point);
+		gestures.down(event.pointerId, point, event.timeStamp);
 		// Keep receiving moves even if the finger slides off the element mid-swipe.
 		element.setPointerCapture(event.pointerId);
 	}
