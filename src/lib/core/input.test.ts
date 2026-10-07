@@ -41,20 +41,20 @@ describe('createGestureTracker', () => {
 		const tracker = createGestureTracker();
 		tracker.down(1, at(100, 100), 0);
 		tracker.move(1, at(103, 102));
-		expect(tracker.up(1, at(104, 102), 120)).toEqual({ type: 'tap', point: at(100, 100) });
+		expect(tracker.up(1, at(104, 102), 120)).toEqual([{ type: 'tap', point: at(100, 100) }]);
 	});
 
 	it('does not treat a long press as a tap', () => {
 		const tracker = createGestureTracker({ tapDuration: 300 });
 		tracker.down(1, at(100, 100), 0);
-		expect(tracker.up(1, at(100, 100), 800)).toBeNull();
+		expect(tracker.up(1, at(100, 100), 800)).toEqual([]);
 	});
 
 	it('does not treat a press that wandered as a tap', () => {
 		const tracker = createGestureTracker({ tapDistance: 10, swipeDistance: 30 });
 		tracker.down(1, at(100, 100), 0);
 		tracker.move(1, at(120, 100)); // past the tap distance, short of a swipe
-		expect(tracker.up(1, at(102, 100), 100)).toBeNull();
+		expect(tracker.up(1, at(102, 100), 100)).toEqual([]);
 	});
 
 	it('fires a swipe mid-gesture, before the pointer lifts', () => {
@@ -70,14 +70,14 @@ describe('createGestureTracker', () => {
 		expect(tracker.move(1, at(40, 0))).toEqual({ type: 'swipe', direction: 'right' });
 		expect(tracker.move(1, at(45, 10))).toBeNull(); // measured from where the last swipe fired
 		expect(tracker.move(1, at(45, 45))).toEqual({ type: 'swipe', direction: 'down' });
-		expect(tracker.up(1, at(45, 46), 300)).toBeNull(); // no extra tap or swipe on release
+		expect(tracker.up(1, at(45, 46), 300)).toEqual([]); // no extra tap or swipe on release
 	});
 
 	it('catches a quick flick that lifts before any move crossed the distance', () => {
 		const tracker = createGestureTracker({ swipeDistance: 30 });
 		tracker.down(1, at(100, 100), 0);
 		tracker.move(1, at(100, 85));
-		expect(tracker.up(1, at(100, 60), 80)).toEqual({ type: 'swipe', direction: 'up' });
+		expect(tracker.up(1, at(100, 60), 80)).toEqual([{ type: 'swipe', direction: 'up' }]);
 	});
 
 	it('ignores a second finger while the first is down', () => {
@@ -85,17 +85,44 @@ describe('createGestureTracker', () => {
 		tracker.down(1, at(0, 0), 0);
 		tracker.down(2, at(200, 200), 10);
 		expect(tracker.move(2, at(300, 200))).toBeNull();
-		expect(tracker.up(2, at(300, 200), 50)).toBeNull();
-		expect(tracker.up(1, at(1, 1), 60)).toEqual({ type: 'tap', point: at(0, 0) });
+		expect(tracker.up(2, at(300, 200), 50)).toEqual([]);
+		expect(tracker.up(1, at(1, 1), 60)).toEqual([{ type: 'tap', point: at(0, 0) }]);
 	});
 
 	it('forgets a cancelled pointer (e.g. the browser took over the gesture)', () => {
 		const tracker = createGestureTracker();
 		tracker.down(1, at(0, 0), 0);
 		tracker.cancel(1);
-		expect(tracker.up(1, at(0, 0), 50)).toBeNull();
+		expect(tracker.up(1, at(0, 0), 50)).toEqual([]);
 		tracker.down(2, at(5, 5), 100); // a new gesture can start
-		expect(tracker.up(2, at(5, 5), 150)).toEqual({ type: 'tap', point: at(5, 5) });
+		expect(tracker.up(2, at(5, 5), 150)).toEqual([{ type: 'tap', point: at(5, 5) }]);
+	});
+
+	it('reports a fast, long swipe as a flick on release, after the swipes it made', () => {
+		const tracker = createGestureTracker({ swipeDistance: 30, flickDistance: 60, flickDuration: 250 });
+		tracker.down(1, at(0, 0), 0);
+		expect(tracker.move(1, at(0, 35))).toEqual({ type: 'swipe', direction: 'down' });
+		expect(tracker.move(1, at(0, 70))).toEqual({ type: 'swipe', direction: 'down' });
+		expect(tracker.up(1, at(2, 90), 150)).toEqual([{ type: 'flick', direction: 'down' }]);
+	});
+
+	it('reports both a swipe and a flick when a flick lifts before any move crossed the swipe distance', () => {
+		const tracker = createGestureTracker({ swipeDistance: 30, flickDistance: 60, flickDuration: 250 });
+		tracker.down(1, at(0, 0), 0);
+		expect(tracker.up(1, at(-80, 5), 90)).toEqual([
+			{ type: 'swipe', direction: 'left' },
+			{ type: 'flick', direction: 'left' }
+		]);
+	});
+
+	it('does not treat a slow drag or a short swipe as a flick', () => {
+		const tracker = createGestureTracker({ swipeDistance: 30, flickDistance: 60, flickDuration: 250 });
+		tracker.down(1, at(0, 0), 0);
+		tracker.move(1, at(0, 35));
+		tracker.move(1, at(0, 70));
+		expect(tracker.up(1, at(0, 90), 600)).toEqual([]); // too slow
+		tracker.down(2, at(0, 0), 1000);
+		expect(tracker.up(2, at(0, 40), 1080)).toEqual([{ type: 'swipe', direction: 'down' }]); // too short
 	});
 });
 
@@ -113,13 +140,15 @@ describe('sendAction (on-screen controls)', () => {
 
 		sendAction('up');
 		sendAction('action');
+		sendAction('down', true); // held button repeating
 		expect(received).toEqual([
 			['up', false],
-			['action', false]
+			['action', false],
+			['down', true]
 		]);
 
 		unbind();
 		sendAction('left');
-		expect(received).toHaveLength(2);
+		expect(received).toHaveLength(3);
 	});
 });

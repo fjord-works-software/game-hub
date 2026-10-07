@@ -1,5 +1,5 @@
 import type { Component } from 'svelte';
-import type { Action } from '../core/input';
+import type { TouchLayout } from '../core/input';
 import type { GameProps } from '../core/types';
 
 export interface GameEntry {
@@ -7,7 +7,7 @@ export interface GameEntry {
 	name: string;
 	component: () => Promise<{ default: Component<GameProps> }>;
 	/** On-screen buttons the player can turn on instead of swiping; omit for none. */
-	controls?: Action[];
+	controls?: TouchLayout;
 }
 
 export const games: GameEntry[] = [
@@ -15,6 +15,19 @@ export const games: GameEntry[] = [
 		slug: 'snake',
 		name: 'Snake',
 		component: () => import('./snake/Snake.svelte'),
-		controls: ['up', 'down', 'left', 'right']
+		controls: { dpad: ['up', 'down', 'left', 'right'] }
+	},
+	{
+		slug: 'falling-blocks',
+		name: 'Falling Blocks',
+		component: () => import('./falling-blocks/FallingBlocks.svelte'),
+		// Up and Space rotate and hard-drop on the keyboard; the labelled buttons send the same actions.
+		controls: {
+			dpad: ['left', 'down', 'right'],
+			buttons: [
+				{ action: 'up', label: 'Rotate' },
+				{ action: 'action', label: 'Drop' }
+			]
+		}
 	}
 ];

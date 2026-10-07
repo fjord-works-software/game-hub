@@ -7,11 +7,27 @@ export interface Point {
 	y: number;
 }
 
+/** Which on-screen buttons a game offers (shown by TouchControls.svelte when the player turns them on). */
+export interface TouchLayout {
+	/** Directions shown on the D-pad. */
+	dpad: Direction[];
+	/** Labelled buttons beside the D-pad, in order, each sending its action. */
+	buttons?: { action: Action; label: string }[];
+}
+
 export interface InputHandlers {
-	/** A key press or swipe. `repeat` is true for keyboard auto-repeat while a key is held. */
+	/**
+	 * A key press, swipe, or on-screen button. `repeat` is true for the repeats sent while a key or
+	 * on-screen button is held down; games ignore them for actions that shouldn't repeat.
+	 */
 	onAction?: (action: Action, repeat: boolean) => void;
 	/** A short press without movement (touch, pen, or mouse click), at the point it started. */
 	onTap?: (point: Point) => void;
+	/**
+	 * A fast, long swipe released quickly (e.g. a flick down to hard-drop). It's reported as well as
+	 * the swipes it made, so games that don't handle flicks still see the swipes.
+	 */
+	onFlick?: (direction: Direction) => void;
 	/** The pointer moved over the element (mouse hover or touch drag), for aiming. */
 	onPointerMove?: (point: Point) => void;
 }
@@ -23,9 +39,16 @@ export interface GestureOptions {
 	tapDistance?: number;
 	/** The longest (ms) a press can last and still count as a tap. */
 	tapDuration?: number;
+	/** How far (CSS px) a pointer must travel along one axis, overall, to count as a flick. */
+	flickDistance?: number;
+	/** The longest (ms) a flick can take from press to release. */
+	flickDuration?: number;
 }
 
-export type Gesture = { type: 'swipe'; direction: Direction } | { type: 'tap'; point: Point };
+export type Gesture =
+	| { type: 'swipe'; direction: Direction }
+	| { type: 'flick'; direction: Direction }
+	| { type: 'tap'; point: Point };
 
 const KEY_ACTIONS: Record<string, Action> = {
 	ArrowUp: 'up',
@@ -52,14 +75,16 @@ export function swipeDirection(dx: number, dy: number, minDistance: number): Dir
 }
 
 /**
- * Turns raw pointer positions into swipes and taps. A swipe fires as soon as the pointer has
- * travelled far enough, without waiting for it to lift, and measuring restarts from that point,
+ * Turns raw pointer positions into swipes, flicks, and taps. A swipe fires as soon as the pointer
+ * has travelled far enough, without waiting for it to lift, and measuring restarts from that point,
  * so one continuous gesture can make several turns. Only the first active pointer is tracked.
  */
 export function createGestureTracker({
 	swipeDistance = 30,
 	tapDistance = 10,
-	tapDuration = 300
+	tapDuration = 300,
+	flickDistance = 60,
+	flickDuration = 250
 }: GestureOptions = {}) {
 	let active: {
 		id: number;
@@ -86,21 +111,27 @@ export function createGestureTracker({
 			return { type: 'swipe', direction };
 		},
 
-		up(id: number, point: Point, time: number): Gesture | null {
-			if (active?.id !== id) return null;
+		up(id: number, point: Point, time: number): Gesture[] {
+			if (active?.id !== id) return [];
 			const gesture = active;
 			active = null;
-			if (gesture.swiped) return null;
+			const dx = point.x - gesture.start.x;
+			const dy = point.y - gesture.start.y;
+			const duration = time - gesture.startTime;
+			const gestures: Gesture[] = [];
 
 			// A quick flick can lift before any pointermove crossed the swipe distance.
-			const direction = swipeDirection(point.x - gesture.start.x, point.y - gesture.start.y, swipeDistance);
-			if (direction) return { type: 'swipe', direction };
+			const swipe = gesture.swiped ? null : swipeDirection(dx, dy, swipeDistance);
+			if (swipe) gestures.push({ type: 'swipe', direction: swipe });
 
-			const furthest = Math.max(gesture.furthest, Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y));
-			if (furthest <= tapDistance && time - gesture.startTime <= tapDuration) {
-				return { type: 'tap', point: gesture.start };
+			const flick = swipeDirection(dx, dy, flickDistance);
+			if (flick && duration <= flickDuration) gestures.push({ type: 'flick', direction: flick });
+
+			const furthest = Math.max(gesture.furthest, Math.hypot(dx, dy));
+			if (!gesture.swiped && furthest <= tapDistance && duration <= tapDuration) {
+				gestures.push({ type: 'tap', point: gesture.start });
 			}
-			return null;
+			return gestures;
 		},
 
 		cancel(id: number): void {
@@ -113,9 +144,11 @@ export function createGestureTracker({
 // exactly like key presses, so games need no code of their own for on-screen buttons.
 const onScreenActions = new EventTarget();
 
+type OnScreenAction = { action: Action; repeat: boolean };
+
 /** Send an action from an on-screen control to the game whose input is currently bound. */
-export function sendAction(action: Action): void {
-	onScreenActions.dispatchEvent(new CustomEvent<Action>('action', { detail: action }));
+export function sendAction(action: Action, repeat = false): void {
+	onScreenActions.dispatchEvent(new CustomEvent<OnScreenAction>('action', { detail: { action, repeat } }));
 }
 
 /** Keys pressed while one of these has focus belong to it (e.g. Space on a menu button), not the game. */
@@ -128,7 +161,7 @@ function isInteractive(target: EventTarget | null): boolean {
 
 /**
  * Sends keyboard actions (arrows/WASD, Space/Enter), on-screen control presses, and pointer swipes,
- * taps, and movement on `element` to `handlers`. Keyboard input is read from the whole window.
+ * flicks, taps, and movement on `element` to `handlers`. Keyboard input is read from the whole window.
  * Returns a cleanup function.
  */
 export function bindInput(element: HTMLElement, handlers: InputHandlers, options?: GestureOptions): () => void {
@@ -141,6 +174,7 @@ export function bindInput(element: HTMLElement, handlers: InputHandlers, options
 
 	function emit(gesture: Gesture | null) {
 		if (gesture?.type === 'swipe') handlers.onAction?.(gesture.direction, false);
+		else if (gesture?.type === 'flick') handlers.onFlick?.(gesture.direction);
 		else if (gesture?.type === 'tap') handlers.onTap?.(gesture.point);
 	}
 
@@ -153,7 +187,8 @@ export function bindInput(element: HTMLElement, handlers: InputHandlers, options
 	}
 
 	function onOnScreenAction(event: Event) {
-		handlers.onAction?.((event as CustomEvent<Action>).detail, false);
+		const { action, repeat } = (event as CustomEvent<OnScreenAction>).detail;
+		handlers.onAction?.(action, repeat);
 	}
 
 	function onPointerDown(event: PointerEvent) {
@@ -170,7 +205,7 @@ export function bindInput(element: HTMLElement, handlers: InputHandlers, options
 	}
 
 	function onPointerUp(event: PointerEvent) {
-		emit(gestures.up(event.pointerId, toPoint(event), event.timeStamp));
+		for (const gesture of gestures.up(event.pointerId, toPoint(event), event.timeStamp)) emit(gesture);
 	}
 
 	function onPointerCancel(event: PointerEvent) {

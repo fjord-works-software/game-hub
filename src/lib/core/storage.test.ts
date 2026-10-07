@@ -30,8 +30,8 @@ describe('storage', () => {
 	});
 
 	it('round-trips values as JSON', () => {
-		save('tetris', 'settings', { level: 3, ghost: true });
-		expect(load('tetris', 'settings', null)).toEqual({ level: 3, ghost: true });
+		save('falling-blocks', 'settings', { level: 3, ghost: true });
+		expect(load('falling-blocks', 'settings', null)).toEqual({ level: 3, ghost: true });
 	});
 
 	it('returns the fallback for missing or corrupt values', () => {
@@ -42,9 +42,9 @@ describe('storage', () => {
 
 	it('keeps games separate', () => {
 		setScore('snake', 10);
-		setScore('tetris', 20);
+		setScore('falling-blocks', 20);
 		expect(getScore('snake')).toBe(10);
-		expect(getScore('tetris')).toBe(20);
+		expect(getScore('falling-blocks')).toBe(20);
 	});
 
 	it('treats a missing or non-numeric high score as 0', () => {

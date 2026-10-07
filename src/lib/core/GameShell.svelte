@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
 	import { resolve } from '$app/paths';
-	import type { Action } from './input';
+	import type { TouchLayout } from './input';
 	import { getScore, load, save, setScore } from './storage';
 	import TouchControls from './TouchControls.svelte';
 	import type { GameProps } from './types';
@@ -10,11 +10,11 @@
 		slug: string;
 		name: string;
 		game: Component<GameProps>;
-		/** Buttons the game supports on screen (from the registry); none means no on-screen controls. */
-		controls?: Action[];
+		/** On-screen buttons the game offers (from the registry); null means none. */
+		controls?: TouchLayout | null;
 	}
 
-	let { slug, name, game: Game, controls = [] }: Props = $props();
+	let { slug, name, game: Game, controls = null }: Props = $props();
 
 	// Whether to show on-screen buttons is one choice for every game, stored outside any game's namespace.
 	const SETTINGS = 'hub';
@@ -114,8 +114,8 @@
 			{/key}
 		</div>
 
-		{#if showControls && controls.length > 0}
-			<TouchControls actions={controls} />
+		{#if showControls && controls}
+			<TouchControls layout={controls} />
 		{/if}
 
 		{#if menu !== 'none'}
@@ -124,7 +124,7 @@
 					<h2 id="menu-title">Paused</h2>
 					<button class="primary" onclick={resume} {@attach focus}>Resume</button>
 					<button onclick={restart}>Restart</button>
-					{#if controls.length > 0}
+					{#if controls}
 						<button aria-pressed={showControls} onclick={toggleControls}>
 							Touch buttons: {showControls ? 'On' : 'Off'}
 						</button>
@@ -163,11 +163,15 @@
 	}
 
 	h1 {
+		/* Long names wrap onto a second line on narrow phones (still within the buttons' height). */
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
 		margin: 0;
 		font-size: 1rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		line-height: 1.15;
 	}
 
 	.scores {
