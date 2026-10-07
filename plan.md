@@ -57,6 +57,7 @@ src/
       GameShell.svelte           # shared wrapper: pause menu, score HUD, back button
       gameLoop.ts                  # requestAnimationFrame helper, fixed-timestep update loop
       input.ts                      # unified keyboard + touch/swipe input handler
+      TouchControls.svelte          # optional on-screen D-pad (+ action button); sends actions through input.ts
       storage.ts                     # localStorage wrapper, namespaced per game slug
       canvas.ts                      # sizes a canvas to its container, scaled by devicePixelRatio
   routes/
@@ -77,16 +78,19 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
 1. **Registry pattern is mandatory.** `src/lib/games/registry.ts` exports an array of game entries:
    ```ts
    import type { Component } from 'svelte';
+   import type { Action } from '../core/input';
    import type { GameProps } from '../core/types';
 
    export interface GameEntry {
      slug: string;
      name: string;
      component: () => Promise<{ default: Component<GameProps> }>;
+     /** On-screen buttons the player can turn on instead of swiping; omit for none. */
+     controls?: Action[];
    }
 
    export const games: GameEntry[] = [
-     { slug: 'snake', name: 'Snake', component: () => import('./snake/Snake.svelte') },
+     { slug: 'snake', name: 'Snake', component: () => import('./snake/Snake.svelte'), controls: ['up', 'down', 'left', 'right'] },
    ];
    ```
    Adding a game means: create a new folder under `src/lib/games/`, add one line to this array. Nothing else should need to change.
@@ -95,7 +99,7 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
 
 3. **Shared game loop.** All games use the same `gameLoop.ts` helper (fixed-timestep `requestAnimationFrame` wrapper) rather than each game writing its own loop.
 
-4. **Unified input handling.** `input.ts` provides a single interface for keyboard arrows/WASD and touch swipe gestures, so every game supports both phone touch and (if used) desktop keyboard without duplicating input code.
+4. **Unified input handling.** `input.ts` provides a single interface for keyboard arrows/WASD and touch swipe gestures, so every game supports both phone touch and (if used) desktop keyboard without duplicating input code. Players who prefer buttons to swipes can turn on an on-screen D-pad from the pause menu (one setting for all games, off by default). A game opts in by listing its buttons in the registry's `controls`; `TouchControls.svelte` sends presses through `sendAction`, so they reach the game's `bindInput` handlers exactly like key presses and the game needs no code for them. Swipes keep working while the buttons are shown.
 
 5. **Consistent shell.** `GameShell.svelte` wraps every game with the same pause menu, score display, and back-to-menu button, so games only render their own play area.
 
@@ -186,7 +190,7 @@ Deployment comes in Phase 1 rather than last, so base-path and GitHub Pages prob
 ### Phase 5 — Tetris (after Phase 4 sign-off)
 - Same pattern: `tetris/logic.ts` with tests (rotation including wall kicks, line clears, scoring, gravity and levels), then `Tetris.svelte`, then one registry line.
 - Layout (rule 8): the 10x20 board suits a phone held upright. Held sideways (~370px tall), cells shrink to about 18px, so check it's still readable. Draw the next-piece preview, level, and lines inside the canvas beside the board (the HUD only shows score and best); there's room beside a tall board in both orientations.
-- Touch controls: tap rotates, swipe left/right moves one column (one long drag moves several, since swipes fire mid-gesture), swipe down drops. Try it on a real phone before finishing. If swipes are too imprecise, add on-screen buttons inside the canvas area, each at least 44 CSS px.
+- Touch controls: tap rotates, swipe left/right moves one column (one long drag moves several, since swipes fire mid-gesture), swipe down drops. Try it on a real phone before finishing. Also list Tetris's buttons in the registry's `controls` so players can use the shared on-screen D-pad instead. Tetris needs rotate and drop as separate actions, so extend `Action` in `input.ts` and `TouchControls.svelte` (e.g. rotate on the round button plus a second button for drop), and consider hold-to-repeat for left, right, and down.
 - Should need no changes to `core/`. If it does, make the core change in its own commit and re-check Snake.
 - **Done when:** the Phase 4 checks pass for Tetris, and Snake still passes them.
 

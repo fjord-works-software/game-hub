@@ -1,13 +1,20 @@
 import type { Component } from 'svelte';
+import type { Action } from '../core/input';
 import type { GameProps } from '../core/types';
 
 export interface GameEntry {
 	slug: string;
 	name: string;
 	component: () => Promise<{ default: Component<GameProps> }>;
+	/** On-screen buttons the player can turn on instead of swiping; omit for none. */
+	controls?: Action[];
 }
 
 export const games: GameEntry[] = [
-	// Temporary: exercises the core framework until Snake replaces it in Phase 4.
-	{ slug: 'stub', name: 'Tap Test', component: () => import('./stub/Stub.svelte') }
+	{
+		slug: 'snake',
+		name: 'Snake',
+		component: () => import('./snake/Snake.svelte'),
+		controls: ['up', 'down', 'left', 'right']
+	}
 ];

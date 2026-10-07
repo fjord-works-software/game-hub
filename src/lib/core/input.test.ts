@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { createGestureTracker, keyToAction, swipeDirection } from './input';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { bindInput, createGestureTracker, keyToAction, sendAction, swipeDirection, type Action } from './input';
 
 describe('keyToAction', () => {
 	it('maps arrows and WASD (either case) to directions', () => {
@@ -96,5 +96,30 @@ describe('createGestureTracker', () => {
 		expect(tracker.up(1, at(0, 0), 50)).toBeNull();
 		tracker.down(2, at(5, 5), 100); // a new gesture can start
 		expect(tracker.up(2, at(5, 5), 150)).toEqual({ type: 'tap', point: at(5, 5) });
+	});
+});
+
+describe('sendAction (on-screen controls)', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('delivers actions to the bound game like key presses, until unbound', () => {
+		vi.stubGlobal('window', new EventTarget());
+		const received: [Action, boolean][] = [];
+		const unbind = bindInput(new EventTarget() as HTMLElement, {
+			onAction: (action, repeat) => received.push([action, repeat])
+		});
+
+		sendAction('up');
+		sendAction('action');
+		expect(received).toEqual([
+			['up', false],
+			['action', false]
+		]);
+
+		unbind();
+		sendAction('left');
+		expect(received).toHaveLength(2);
 	});
 });

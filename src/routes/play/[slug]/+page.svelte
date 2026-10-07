@@ -10,5 +10,5 @@
 </svelte:head>
 
 {#key data.slug}
-	<GameShell slug={data.slug} name={data.name} game={data.component} />
+	<GameShell slug={data.slug} name={data.name} game={data.component} controls={data.controls} />
 {/key}

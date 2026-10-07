@@ -13,5 +13,5 @@ export const load: PageLoad = async ({ params }) => {
 	// Loading the game's code here (not in the page) means it's ready before the page renders,
 	// while still only being downloaded when this game is opened.
 	const { default: component } = await entry.component();
-	return { slug: entry.slug, name: entry.name, component };
+	return { slug: entry.slug, name: entry.name, component, controls: entry.controls ?? [] };
 };

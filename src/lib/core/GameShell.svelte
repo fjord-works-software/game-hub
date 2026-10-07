@@ -1,16 +1,24 @@
 <script lang="ts">
 	import { onMount, type Component } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { getScore, setScore } from './storage';
+	import type { Action } from './input';
+	import { getScore, load, save, setScore } from './storage';
+	import TouchControls from './TouchControls.svelte';
 	import type { GameProps } from './types';
 
 	interface Props {
 		slug: string;
 		name: string;
 		game: Component<GameProps>;
+		/** Buttons the game supports on screen (from the registry); none means no on-screen controls. */
+		controls?: Action[];
 	}
 
-	let { slug, name, game: Game }: Props = $props();
+	let { slug, name, game: Game, controls = [] }: Props = $props();
+
+	// Whether to show on-screen buttons is one choice for every game, stored outside any game's namespace.
+	const SETTINGS = 'hub';
+	const TOUCH_CONTROLS = 'touch-controls';
 
 	let score = $state(0);
 	let best = $state(0);
@@ -18,10 +26,12 @@
 	let menu = $state<'none' | 'paused' | 'over'>('none');
 	// Bumping this remounts the game via {#key}, so games need no reset logic of their own.
 	let round = $state(0);
+	let showControls = $state(false);
 
 	onMount(() => {
 		// Read on mount, not during prerendering, where there's no localStorage.
 		best = getScore(slug);
+		showControls = load<unknown>(SETTINGS, TOUCH_CONTROLS, false) === true;
 	});
 
 	function pause() {
@@ -37,6 +47,11 @@
 		newBest = false;
 		menu = 'none';
 		round++;
+	}
+
+	function toggleControls() {
+		showControls = !showControls;
+		save(SETTINGS, TOUCH_CONTROLS, showControls);
 	}
 
 	function onScore(value: number) {
@@ -76,15 +91,32 @@
 			<div><dt>Score</dt><dd>{score}</dd></div>
 			<div><dt>Best</dt><dd>{best}</dd></div>
 		</dl>
-		<button class="icon-button" onclick={pause} disabled={menu !== 'none'} aria-label="Pause">
-			&#10074;&#10074;
+		<!-- Opens the menu (which pauses the game). -->
+		<button
+			class="icon-button"
+			onclick={pause}
+			disabled={menu !== 'none'}
+			aria-label="Menu"
+			aria-haspopup="dialog"
+		>
+			<svg viewBox="0 0 20 20" aria-hidden="true">
+				<rect x="2" y="3" width="16" height="3" />
+				<rect x="2" y="8.5" width="16" height="3" />
+				<rect x="2" y="14" width="16" height="3" />
+			</svg>
 		</button>
 	</header>
 
 	<div class="play-area">
-		{#key round}
-			<Game paused={menu !== 'none'} {onScore} {onGameOver} />
-		{/key}
+		<div class="game">
+			{#key round}
+				<Game paused={menu !== 'none'} {onScore} {onGameOver} />
+			{/key}
+		</div>
+
+		{#if showControls && controls.length > 0}
+			<TouchControls actions={controls} />
+		{/if}
 
 		{#if menu !== 'none'}
 			<div class="menu" role="dialog" aria-modal="true" aria-labelledby="menu-title">
@@ -92,6 +124,11 @@
 					<h2 id="menu-title">Paused</h2>
 					<button class="primary" onclick={resume} {@attach focus}>Resume</button>
 					<button onclick={restart}>Restart</button>
+					{#if controls.length > 0}
+						<button aria-pressed={showControls} onclick={toggleControls}>
+							Touch buttons: {showControls ? 'On' : 'Off'}
+						</button>
+					{/if}
 				{:else}
 					<h2 id="menu-title">Game over</h2>
 					<p>Score {score}{#if newBest}<br /><strong>New best!</strong>{/if}</p>
@@ -167,6 +204,12 @@
 		cursor: pointer;
 	}
 
+	.icon-button svg {
+		width: 20px;
+		height: 20px;
+		fill: currentColor;
+	}
+
 	.icon-button:disabled {
 		opacity: 0.4;
 		cursor: default;
@@ -174,12 +217,22 @@
 
 	.play-area {
 		position: relative;
+		display: flex;
+		flex-direction: column;
 		flex: 1;
 		/* Keep the game clear of the home indicator and of notches when the phone is sideways. */
 		margin: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
 		overflow: hidden;
 		/* Swipes belong to the game: no scrolling or zooming. */
 		touch-action: none;
+	}
+
+	/* The game fills whatever the on-screen controls (if shown) leave. */
+	.game {
+		position: relative;
+		flex: 1;
+		min-width: 0;
+		min-height: 0;
 	}
 
 	.menu {
@@ -225,6 +278,13 @@
 	.menu .primary {
 		background: var(--accent);
 		color: var(--bg);
+	}
+
+	/* On-screen controls go below the game when upright, beside it when sideways. */
+	@media (orientation: landscape) {
+		.play-area {
+			flex-direction: row;
+		}
 	}
 
 	/* A phone held sideways has little height to spare, so the HUD becomes a narrow sidebar. */

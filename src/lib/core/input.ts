@@ -109,6 +109,15 @@ export function createGestureTracker({
 	};
 }
 
+// On-screen controls (TouchControls.svelte) send actions here; bindInput delivers them to the game
+// exactly like key presses, so games need no code of their own for on-screen buttons.
+const onScreenActions = new EventTarget();
+
+/** Send an action from an on-screen control to the game whose input is currently bound. */
+export function sendAction(action: Action): void {
+	onScreenActions.dispatchEvent(new CustomEvent<Action>('action', { detail: action }));
+}
+
 /** Keys pressed while one of these has focus belong to it (e.g. Space on a menu button), not the game. */
 function isInteractive(target: EventTarget | null): boolean {
 	return (
@@ -118,8 +127,9 @@ function isInteractive(target: EventTarget | null): boolean {
 }
 
 /**
- * Sends keyboard actions (arrows/WASD, Space/Enter) and pointer swipes, taps, and movement on
- * `element` to `handlers`. Keyboard input is read from the whole window. Returns a cleanup function.
+ * Sends keyboard actions (arrows/WASD, Space/Enter), on-screen control presses, and pointer swipes,
+ * taps, and movement on `element` to `handlers`. Keyboard input is read from the whole window.
+ * Returns a cleanup function.
  */
 export function bindInput(element: HTMLElement, handlers: InputHandlers, options?: GestureOptions): () => void {
 	const gestures = createGestureTracker(options);
@@ -140,6 +150,10 @@ export function bindInput(element: HTMLElement, handlers: InputHandlers, options
 		if (!action) return;
 		event.preventDefault(); // stop arrows and Space from scrolling the page
 		handlers.onAction?.(action, event.repeat);
+	}
+
+	function onOnScreenAction(event: Event) {
+		handlers.onAction?.((event as CustomEvent<Action>).detail, false);
 	}
 
 	function onPointerDown(event: PointerEvent) {
@@ -164,6 +178,7 @@ export function bindInput(element: HTMLElement, handlers: InputHandlers, options
 	}
 
 	window.addEventListener('keydown', onKeyDown);
+	onScreenActions.addEventListener('action', onOnScreenAction);
 	element.addEventListener('pointerdown', onPointerDown);
 	element.addEventListener('pointermove', onPointerMove);
 	element.addEventListener('pointerup', onPointerUp);
@@ -171,6 +186,7 @@ export function bindInput(element: HTMLElement, handlers: InputHandlers, options
 
 	return () => {
 		window.removeEventListener('keydown', onKeyDown);
+		onScreenActions.removeEventListener('action', onOnScreenAction);
 		element.removeEventListener('pointerdown', onPointerDown);
 		element.removeEventListener('pointermove', onPointerMove);
 		element.removeEventListener('pointerup', onPointerUp);
