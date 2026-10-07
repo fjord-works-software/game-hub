@@ -44,15 +44,18 @@ src/
         Snake.svelte            # game component (canvas + loop wiring)
         logic.ts                 # pure game logic, no DOM/canvas references
         logic.test.ts            # Vitest unit tests for logic.ts
+        thumbnail.png            # 4:3 picture of play for the home page card
       falling-blocks/
         FallingBlocks.svelte
         logic.ts
         logic.test.ts
+        thumbnail.png
       buck-fever/
         BuckFever.svelte
         art.ts                     # the pixel art, drawn in code (no image files)
         logic.ts
         logic.test.ts
+        thumbnail.png
     core/
       types.ts                     # GameProps: the contract between GameShell and every game
       GameShell.svelte           # shared wrapper: pause menu, score HUD, back button
@@ -68,6 +71,8 @@ src/
       [slug]/
         +page.ts                   # entries() lists every registry slug so each game page is prerendered
         +page.svelte               # dynamically loads game component by slug from registry
+scripts/
+  thumbnails.mjs                  # captures each game's home page picture (npm run thumbnails)
 static/
   manifest.json                   # PWA manifest
   icons/                            # 192x192 and 512x512 icons minimum (placeholders for now)
@@ -81,20 +86,26 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
    import type { Component } from 'svelte';
    import type { TouchLayout } from '../core/input';
    import type { GameProps } from '../core/types';
+   import snakeThumbnail from './snake/thumbnail.png';
 
    export interface GameEntry {
      slug: string;
      name: string;
      component: () => Promise<{ default: Component<GameProps> }>;
+     /** A 4:3 picture of the game in play, for its card on the home page (imported, so it's precached). */
+     thumbnail?: string;
      /** On-screen buttons the player can turn on instead of swiping; omit for none. */
      controls?: TouchLayout;
    }
 
    export const games: GameEntry[] = [
-     { slug: 'snake', name: 'Snake', component: () => import('./snake/Snake.svelte'), controls: { dpad: ['up', 'down', 'left', 'right'] } },
+     { slug: 'snake', name: 'Snake', component: () => import('./snake/Snake.svelte'), thumbnail: snakeThumbnail, controls: { dpad: ['up', 'down', 'left', 'right'] } },
    ];
    ```
-   Adding a game means: create a new folder under `src/lib/games/`, add one line to this array. Nothing else should need to change.
+   Adding a game means: create a new folder under `src/lib/games/` and add one entry to this array. Nothing else should need to change. Its home page card shows a striped placeholder until it has a picture:
+   - `npm run thumbnails` builds the site and captures a 4:3 `thumbnail.png` into the folder of each game that doesn't have one (`npm run thumbnails -- <slug>` replaces one game's picture; `-- --all` replaces every picture). It drives a headless Chrome; set `CHROME` to its path if it isn't found.
+   - A new game gets the default capture: started, left to play for three seconds, and the middle of its canvas cropped to 4:3. For a better picture, add a recipe for it in `scripts/thumbnails.mjs` that sets up a good moment (seeded `Math.random`, planned moves, a chosen crop), like the three there.
+   - Then import the picture in the registry and set the entry's `thumbnail`. The script reminds you when it isn't there yet.
 
 2. **Separate logic from rendering.** Each game has a `logic.ts` with pure functions/state (no DOM, no canvas) and a `.svelte` file that owns the canvas element and calls into `logic.ts`. This keeps logic testable and keeps games consistent with each other.
 
