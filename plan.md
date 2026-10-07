@@ -15,7 +15,7 @@ A PWA built with SvelteKit that hosts multiple browser games, installable and fu
 ## SvelteKit 3 Notes
 The project is on SvelteKit 3.0.1. Many docs, examples, and AI-model defaults assume SvelteKit 2. Where they disagree, follow these:
 - There is no `svelte.config.js`. Kit options (adapter, `paths.base`, etc.) go in the `sveltekit({...})` call in `vite.config.ts`.
-- The library alias is `#lib` (defined in `package.json` `imports`), not `$lib`.
+- The library alias is `#lib` (defined in `package.json` `imports`), not `$lib`. It's a Node subpath import, so it doesn't add extensions: import `#lib/games/registry.ts`, not `#lib/games/registry`. Inside `src/lib`, use relative imports.
 - The `$service-worker` module is gone. Use `immutable`, `assets`, and `prerendered` from `$app/manifest`; `version` from `$app/env`; and `self` from `$app/service-worker`.
 - The service worker is its own TypeScript project: `src/service-worker/index.ts` next to a `tsconfig.json` that extends `$app/tsconfig/service-worker`, with `src/service-worker` excluded from the root `tsconfig.json`. `npm run check` type-checks it separately with `tsc -p src/service-worker`.
 - `$app/paths` no longer exports `base`. Build internal links with `resolve()` and static-file URLs with `asset()` from `$app/paths`, so they work under `/game-hub`. `asset()` takes paths without a leading slash (`asset('manifest.json')`), and `resolve()` is typed for app routes only, so it can't resolve build-file paths.
@@ -99,9 +99,16 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
 
 5. **Consistent shell.** `GameShell.svelte` wraps every game with the same pause menu, score display, and back-to-menu button, so games only render their own play area.
 
-6. **Namespaced storage.** Any game needing persistence (high scores, etc.) goes through `storage.ts` using `getScore(slug)` / `setScore(slug, value)` style helpers — never calls `localStorage` directly from a game component.
+6. **Namespaced storage.** Any game needing persistence goes through `storage.ts` (`load`/`save`, `getScore(slug)` / `setScore(slug, value)`) — never calls `localStorage` directly from a game component. High scores need no game code at all: `GameShell` records them from `onGameOver`.
 
 7. **Lazy loading.** Games are dynamically imported via the registry's `component()` function so the initial bundle stays small and offline installs are fast.
+
+8. **Fit whatever space the play area gets.** The play area can be any size and shape: a phone held upright (~390x700), a phone held sideways where the HUD becomes a sidebar (~680x370), a tablet, or a desktop window. It changes when the phone rotates or the window resizes. The shell already keeps it clear of notches and the home indicator, so games never handle safe areas themselves. Each game:
+   - sizes its canvas with `fitCanvas` (`core/canvas.ts`) and redraws in its `onResize`; a resize never resets or pauses the game.
+   - keeps `logic.ts` in its own units (grid cells, world coordinates), never pixels. The component derives a scale and offset from the canvas size, centres the board, and fills the rest with the background (letterboxing).
+   - uses whole-pixel cell sizes (and `imageSmoothingEnabled = false` for sprites) so pixel art stays crisp.
+   - binds input to the whole canvas, so swipes and taps in the letterbox margins still count, and converts tap and pointer points to game units with the same scale and offset it draws with.
+   - sizes text and anything else drawn on the canvas relative to the board, and makes any on-screen control or tap target at least 44 CSS px (`--touch-target`).
 
 ## PWA / Offline Requirements
 - Use `adapter-static` with `paths.base` read from a `BASE_PATH` environment variable: `/game-hub` in the deploy workflow, empty in local dev.
@@ -159,7 +166,7 @@ Deployment comes in Phase 1 rather than last, so base-path and GitHub Pages prob
 - `core/storage.ts`: `getScore(slug)` / `setScore(slug, value)` plus generic load/save, with keys of the form `game-hub:<slug>:<key>` so they can't collide with other sites on the shared domain. Wrap every `localStorage` call in try/catch (it can throw in private browsing) and fall back to defaults. Tested.
 - `core/gameLoop.ts`: fixed-timestep loop over `requestAnimationFrame` with an accumulator, exposing `start`, `stop`, `pause`, `resume`. Cap the elapsed time per frame so returning to a backgrounded tab doesn't fast-forward the game. Tested with an injected clock.
 - `core/input.ts`: maps arrows/WASD and swipes to named actions (`up`, `down`, `left`, `right`, `action`), and also reports taps and pointer position. Tetris needs rotate/drop and Deer Hunter needs aim/shoot, so a directions-only API would have to break later. Attaches to an element and returns a cleanup function. Swipe detection tested.
-- `core/types.ts`: `GameProps`, the props every game component accepts (e.g. `paused`, `onScore`, `onGameOver`).
+- `core/types.ts`: `GameProps`, the props every game component accepts: `paused`, `onScore`, `onGameOver`. The shell records the high score when `onGameOver` is called, so games don't touch storage for it.
 - `core/canvas.ts`: sizes a canvas to its container and scales it by `devicePixelRatio` so games are sharp on phones.
 - `core/GameShell.svelte`: score HUD, pause menu (resume / restart / back to menu), back button. Pauses automatically on `visibilitychange`. Restart remounts the game with `{#key}`, so games need no reset logic of their own. The play area gets `touch-action: none` so swipes don't scroll the page or trigger pull-to-refresh.
 - `games/registry.ts` with the typed `GameEntry` and one temporary `stub` game (e.g. a canvas that adds a point per tap).
@@ -171,18 +178,23 @@ Deployment comes in Phase 1 rather than last, so base-path and GitHub Pages prob
 ### Phase 4 — Snake, end to end
 - `games/snake/logic.ts`: grid state, movement, turning (ignore reversing into itself, and queue a second turn pressed within the same tick), growth, wall and self collision, and food placement on a free cell using an injectable random source. Pure functions only.
 - `games/snake/logic.test.ts`: covers each rule above, including food never spawning on the snake.
-- `games/snake/Snake.svelte`: owns the canvas, drives `logic.ts` from `gameLoop.ts` and `input.ts`, reports score through `GameProps`, and saves the high score through `storage.ts`.
+- `games/snake/Snake.svelte`: owns the canvas, drives `logic.ts` from `gameLoop.ts` and `input.ts`, and reports the score and game over through `GameProps` (the shell records the high score).
+- Layout (rule 8): a fixed square grid (e.g. 20x20), so the game plays the same on every device. Cell size is `floor(min(width, height) / 20)` and the board is centred. Rotating the phone mid-game rescales the board without resetting it.
 - Remove the stub game and its registry line; add Snake's line.
-- **Done when:** Snake plays correctly with the keyboard on desktop and with swipes on a real phone, the high score survives a reload, and the installed app launched from the home screen works in airplane mode. **This is the sign-off gate before any other game.**
+- **Done when:** Snake plays correctly with the keyboard on desktop and with swipes on a real phone, held both upright and sideways, including rotating mid-game. The board never sits under the notch or home indicator, and swipes work anywhere in the play area. The high score survives a reload, and the installed app launched from the home screen works in airplane mode. **This is the sign-off gate before any other game.**
 
 ### Phase 5 — Tetris (after Phase 4 sign-off)
 - Same pattern: `tetris/logic.ts` with tests (rotation including wall kicks, line clears, scoring, gravity and levels), then `Tetris.svelte`, then one registry line.
+- Layout (rule 8): the 10x20 board suits a phone held upright. Held sideways (~370px tall), cells shrink to about 18px, so check it's still readable. Draw the next-piece preview, level, and lines inside the canvas beside the board (the HUD only shows score and best); there's room beside a tall board in both orientations.
+- Touch controls: tap rotates, swipe left/right moves one column (one long drag moves several, since swipes fire mid-gesture), swipe down drops. Try it on a real phone before finishing. If swipes are too imprecise, add on-screen buttons inside the canvas area, each at least 44 CSS px.
 - Should need no changes to `core/`. If it does, make the core change in its own commit and re-check Snake.
 - **Done when:** the Phase 4 checks pass for Tetris, and Snake still passes them.
 
 ### Phase 6 — 8-bit Deer Hunter (after Phase 5 sign-off)
 - Same pattern: `deer-hunter/logic.ts` with tests, then `DeerHunter.svelte`, then one registry line.
 - The game most likely to need new core features (sprite-sheet loading, maybe audio). Sprites and sounds must be imported through the build or placed in `static/` so the service worker precaches them; never load them from external URLs.
+- Layout (rule 8): a wide, low-resolution 8-bit scene (e.g. 16:9, scaled up by a whole number) suits a phone held sideways. Held upright it letterboxes into a small strip. Orientation can't be locked per game (iOS doesn't support locking, and the manifest's `orientation` would apply to every game), so show a "turn your phone sideways" hint when the play area is taller than it is wide.
+- Aiming: on touch, tap to shoot. On desktop, `onPointerMove` drives a crosshair and a click shoots. Convert points to world coordinates with the drawing scale and offset, and keep hit areas at least 44 CSS px on a phone, enlarging them beyond the sprite if needed.
 - **Done when:** the Phase 4 checks pass for Deer Hunter, and Snake and Tetris still pass them.
 
 ## Explicitly Out of Scope for Now

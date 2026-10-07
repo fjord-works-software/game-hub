@@ -1,0 +1,62 @@
+:root {
+	--bg: #1a1c2c; /* matches theme_color/background_color in static/manifest.json */
+	--surface: #333c57;
+	--text: #f4f4f4;
+	--muted: #94b0c2;
+	--accent: #38b764;
+	--accent-2: #ef7d57;
+
+	/* Smallest comfortable size for anything tapped. */
+	--touch-target: 44px;
+
+	/* Space taken by notches, the status bar, and the home indicator (0 where there are none). */
+	--safe-top: env(safe-area-inset-top, 0px);
+	--safe-right: env(safe-area-inset-right, 0px);
+	--safe-bottom: env(safe-area-inset-bottom, 0px);
+	--safe-left: env(safe-area-inset-left, 0px);
+
+	color-scheme: dark;
+	font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	background: var(--bg);
+	color: var(--text);
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	/* Keep iOS from enlarging text when the phone is turned sideways. */
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+	/* No pull-to-refresh or bounce: it's an app, and a swipe should never reload it. */
+	overscroll-behavior: none;
+}
+
+body {
+	background: var(--bg);
+	-webkit-tap-highlight-color: transparent;
+}
+
+a {
+	color: inherit;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+}
+
+a,
+button {
+	/* Taps register immediately and a quick double tap never zooms the page. */
+	touch-action: manipulation;
+}
