@@ -7,7 +7,7 @@ A PWA built with SvelteKit that hosts multiple browser games, installable and fu
 - SvelteKit 3 with `adapter-static` (some APIs differ from SvelteKit 2 — see **SvelteKit 3 Notes**)
 - TypeScript
 - Vanilla Canvas 2D for game rendering (no game engine library)
-- SvelteKit's built-in service worker support (`src/service-worker.ts` + `$app/manifest`) for offline caching
+- SvelteKit's built-in service worker support (`src/service-worker/index.ts` + `$app/manifest`) for offline caching
 - `localStorage` for optional per-game persistence
 - Vitest for unit tests of game logic and core modules
 - GitHub Pages for hosting (repo: `game-hub`, deployed by GitHub Actions)
@@ -16,8 +16,9 @@ A PWA built with SvelteKit that hosts multiple browser games, installable and fu
 The project is on SvelteKit 3.0.1. Many docs, examples, and AI-model defaults assume SvelteKit 2. Where they disagree, follow these:
 - There is no `svelte.config.js`. Kit options (adapter, `paths.base`, etc.) go in the `sveltekit({...})` call in `vite.config.ts`.
 - The library alias is `#lib` (defined in `package.json` `imports`), not `$lib`.
-- The `$service-worker` module is gone. In `src/service-worker.ts`, use `immutable`, `assets`, and `prerendered` from `$app/manifest`; `version` from `$app/env`; and `self` from `$app/service-worker` (typed correctly when governed by a tsconfig that extends `$app/tsconfig/service-worker`).
-- `$app/paths` no longer exports `base`. Build internal links with `resolve()` and static-file URLs with `asset()` from `$app/paths`, so they work under `/game-hub`.
+- The `$service-worker` module is gone. Use `immutable`, `assets`, and `prerendered` from `$app/manifest`; `version` from `$app/env`; and `self` from `$app/service-worker`.
+- The service worker is its own TypeScript project: `src/service-worker/index.ts` next to a `tsconfig.json` that extends `$app/tsconfig/service-worker`, with `src/service-worker` excluded from the root `tsconfig.json`. `npm run check` type-checks it separately with `tsc -p src/service-worker`.
+- `$app/paths` no longer exports `base`. Build internal links with `resolve()` and static-file URLs with `asset()` from `$app/paths`, so they work under `/game-hub`. `asset()` takes paths without a leading slash (`asset('manifest.json')`), and `resolve()` is typed for app routes only, so it can't resolve build-file paths.
 - When unsure about an API, check `node_modules/@sveltejs/kit/types/index.d.ts` or current docs, not memory.
 
 ## Initial Games (build in this order)
@@ -33,7 +34,9 @@ Each game is self-contained; do not build all three at once. Scaffold the archit
   workflows/
     deploy.yml                    # check, test, build, deploy to GitHub Pages
 src/
-  service-worker.ts               # precaches the build for offline play
+  service-worker/
+    index.ts                      # precaches the build for offline play
+    tsconfig.json                 # WebWorker types; excluded from the root tsconfig
   lib/
     games/
       registry.ts              # single source of truth: list of games + metadata
@@ -102,13 +105,14 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
 
 ## PWA / Offline Requirements
 - Use `adapter-static` with `paths.base` read from a `BASE_PATH` environment variable: `/game-hub` in the deploy workflow, empty in local dev.
-- Use SvelteKit's built-in service worker (`src/service-worker.ts`) and precache everything listed in `$app/manifest` (`immutable`, `assets`, `prerendered`) on install — do not hand-maintain a cache list.
+- Use SvelteKit's built-in service worker (`src/service-worker/index.ts`) and precache everything listed in `$app/manifest` (`immutable`, `assets`, `prerendered`) on install — do not hand-maintain a cache list.
 - `static/manifest.json` must include name, short_name, start_url and scope set to `"./"` (relative to the manifest, so they respect the base path without hardcoding it), display: "standalone", background/theme colors, and icons at minimum 192x192 and 512x512.
 - Verify the app loads and is playable with network fully disabled after first visit (test via DevTools offline mode).
 
 ## Deployment
 - GitHub Pages via a GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs type checks, tests, and `npm run build`, then publishes `build/` with `actions/upload-pages-artifact` and `actions/deploy-pages`.
 - In the GitHub repo settings, set Pages → Source to "GitHub Actions".
+- The GitHub account has a custom domain, so the site is served at `https://fjordworkssoftware.com/game-hub/` (the `github.io` URL redirects there). That origin is shared with every other project site on the domain, and so are its Cache Storage and `localStorage`. The service worker's caches and the storage keys must be prefixed with `game-hub` (see Phases 2 and 3).
 
 ## CLI Commands to Scaffold the Project
 
@@ -147,12 +151,12 @@ Deployment comes in Phase 1 rather than last, so base-path and GitHub Pages prob
 ### Phase 2 — Install and offline support
 - Generate placeholder icons into `static/icons/`: 192x192, 512x512, a 512x512 maskable variant (mark kept inside the central 80% safe zone), and a 180x180 `apple-touch-icon` for iOS. A solid theme-color background with a simple pixel-art mark is enough. Real art replaces these files later with no code changes.
 - Add `static/manifest.json` per **PWA / Offline Requirements**. Link it and the apple-touch icon from `+layout.svelte` using `asset()`, and add a `theme-color` meta tag.
-- Add `src/service-worker.ts`: on `install`, precache `immutable`, `assets`, and `prerendered` into a cache named after `version`; on `activate`, delete older caches; on `fetch`, serve GET requests from the cache first and fall back to the network.
+- Add `src/service-worker/index.ts` (and its `tsconfig.json`, see **SvelteKit 3 Notes**): on `install`, precache `immutable`, `assets`, and `prerendered` into a cache named `game-hub-<version>`; on `activate`, delete older caches whose names start with `game-hub-` and leave every other cache alone (they belong to other sites on the shared domain); on `fetch`, serve GET requests from the cache first and fall back to the network.
 - **Done when:** DevTools → Application shows the app as installable with no manifest errors, and after one visit the deployed site reloads and navigates with DevTools set to Offline.
 
 ### Phase 3 — Core framework (verified with a throwaway stub game)
 - Add Vitest, an `npm test` script, and a test step in the deploy workflow before the build.
-- `core/storage.ts`: `getScore(slug)` / `setScore(slug, value)` plus generic load/save, with keys prefixed by slug. Wrap every `localStorage` call in try/catch (it can throw in private browsing) and fall back to defaults. Tested.
+- `core/storage.ts`: `getScore(slug)` / `setScore(slug, value)` plus generic load/save, with keys of the form `game-hub:<slug>:<key>` so they can't collide with other sites on the shared domain. Wrap every `localStorage` call in try/catch (it can throw in private browsing) and fall back to defaults. Tested.
 - `core/gameLoop.ts`: fixed-timestep loop over `requestAnimationFrame` with an accumulator, exposing `start`, `stop`, `pause`, `resume`. Cap the elapsed time per frame so returning to a backgrounded tab doesn't fast-forward the game. Tested with an injected clock.
 - `core/input.ts`: maps arrows/WASD and swipes to named actions (`up`, `down`, `left`, `right`, `action`), and also reports taps and pointer position. Tetris needs rotate/drop and Deer Hunter needs aim/shoot, so a directions-only API would have to break later. Attaches to an element and returns a cleanup function. Swipe detection tested.
 - `core/types.ts`: `GameProps`, the props every game component accepts (e.g. `paused`, `onScore`, `onGameOver`).
