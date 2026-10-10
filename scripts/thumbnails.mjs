@@ -405,6 +405,107 @@ const recipes = {
 		}
 		if (!fallback) throw new Error('no deer came close enough to picture');
 		return fromDataUrl(fallback.url);
+	},
+
+	/**
+	 * Brick Bash: played for real, with the page steering the paddle under the ball, until a few
+	 * bricks are gone and the ball is just below them. The field is taller than 4:3, so the picture
+	 * joins its top (the level, the bricks, and the ball) to the strip with the paddle, leaving out
+	 * the empty middle: 240x180 world px of the 240x320 field, at 3x.
+	 */
+	async 'brick-bash'(page, base) {
+		await page.seed(2024);
+		await page.viewport(800, 1100, 2);
+		await page.goto(`${base}play/brick-bash`);
+		await page.canvas();
+		await delay(300);
+		await page.press(' ');
+		const url = await page.evaluate(
+			(top, bottom) =>
+				new Promise((resolve, reject) => {
+					const canvas = document.querySelector('canvas');
+					const context = canvas.getContext('2d');
+					const rect = canvas.getBoundingClientRect();
+					const ratio = canvas.width / rect.width;
+					const score = () => Number(document.querySelector('.scores dd')?.textContent);
+					const started = Date.now();
+					let field = null;
+					// Which side of the paddle's middle (CSS px) meets the ball. It swaps at each bounce, so the
+					// ball goes up at different angles and breaks bricks across the wall.
+					let side = 20;
+					let lastBall = null;
+					let falling = false;
+
+					const frame = () => {
+						if (Date.now() - started > 90_000) return reject(new Error('no good moment came up'));
+						const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+						const at = (x, y, r, g, b) => {
+							const i = (y * canvas.width + x) * 4;
+							return data[i] === r && data[i + 1] === g && data[i + 2] === b;
+						};
+						// The field, by its colour (once; it doesn't move).
+						if (!field) {
+							let left = Infinity, right = -1, high = Infinity, low = -1;
+							for (let y = 0; y < canvas.height; y++) {
+								for (let x = 0; x < canvas.width; x++) {
+									if (at(x, y, 33, 38, 58)) {
+										left = Math.min(left, x);
+										right = Math.max(right, x);
+										high = Math.min(high, y);
+										low = Math.max(low, y);
+									}
+								}
+							}
+							field = { left, top: high, scale: (right - left + 1) / 240 };
+						}
+						// The ball: the white pixels, when they make a small square (a breaking brick flashes white too).
+						let left = Infinity, right = -1, high = Infinity, low = -1;
+						for (let y = 0; y < canvas.height; y++) {
+							for (let x = 0; x < canvas.width; x++) {
+								if (at(x, y, 244, 244, 244)) {
+									left = Math.min(left, x);
+									right = Math.max(right, x);
+									high = Math.min(high, y);
+									low = Math.max(low, y);
+								}
+							}
+						}
+						const size = right - left + 1;
+						const ball =
+							right >= 0 && size < field.scale * 7 && Math.abs(size - (low - high + 1)) <= 2
+								? { x: (left + right + 1) / 2, y: (high + low + 1) / 2 }
+								: null;
+						if (ball) {
+							const world = (ball.y - field.top) / field.scale;
+							const across = (ball.x - field.left) / field.scale;
+							// Rising, just below the bricks and away from the walls, with a good few bricks gone.
+							const placed = world > top - 44 && world < top - 14 && across > 60 && across < 180;
+							if (lastBall && ball.y < lastBall.y && placed && score() >= 150) {
+								const out = Object.assign(document.createElement('canvas'), { width: 720, height: 540 });
+								const pictureContext = out.getContext('2d');
+								pictureContext.imageSmoothingQuality = 'high';
+								const k = field.scale;
+								pictureContext.drawImage(canvas, field.left, field.top, 240 * k, top * k, 0, 0, 720, top * 3);
+								pictureContext.drawImage(canvas, field.left, field.top + bottom[0] * k, 240 * k, (bottom[1] - bottom[0]) * k, 0, top * 3, 720, (bottom[1] - bottom[0]) * 3);
+								return resolve(out.toDataURL('image/png'));
+							}
+							const rising = lastBall !== null && ball.y < lastBall.y;
+							if (rising && falling && world > 250) side = -side; // it just came off the paddle
+							if (lastBall && ball.y !== lastBall.y) falling = !rising;
+							lastBall = ball;
+							canvas.dispatchEvent(
+								new PointerEvent('pointermove', { clientX: rect.x + ball.x / ratio + side, clientY: rect.y + ball.y / ratio, pointerId: 1, bubbles: true })
+							);
+						}
+						requestAnimationFrame(frame);
+					};
+					frame();
+				}),
+			// World rows kept: the top 136 (down to just below the bricks), and 262-306 (the paddle).
+			136,
+			[262, 306]
+		);
+		return fromDataUrl(url);
 	}
 };
 
@@ -416,7 +517,7 @@ const chrome = await launchChrome();
 const registry = readFileSync(new URL('registry.ts', GAMES), 'utf8');
 try {
 	const args = process.argv.slice(2);
-	let slugs = args.filter((arg) => arg !== '--all');
+	let slugs = args.filter((arg) => !arg.startsWith('-')); // options like --all, and a stray -- from npm
 	if (slugs.length === 0) {
 		const page = await Page.open(chrome.endpoint);
 		await page.goto(base);

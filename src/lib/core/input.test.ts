@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { bindInput, createGestureTracker, keyToAction, sendAction, swipeDirection, type Action } from './input';
+import {
+	bindInput,
+	createGestureTracker,
+	keyToAction,
+	releaseAction,
+	sendAction,
+	swipeDirection,
+	type Action
+} from './input';
 
 describe('keyToAction', () => {
 	it('maps arrows and WASD (either case) to directions', () => {
@@ -179,5 +187,76 @@ describe('bindInput pointer presses', () => {
 
 		pointer('pointerdown', 2); // right button
 		expect(received).toHaveLength(2);
+	});
+});
+
+describe('bindInput held actions', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	function bind() {
+		const target = new EventTarget();
+		vi.stubGlobal('window', target);
+		vi.stubGlobal('HTMLElement', class {}); // checked for focused buttons; there's no DOM here
+		const held: string[] = [];
+		const element = Object.assign(new EventTarget(), {
+			getBoundingClientRect: () => ({ left: 0, top: 0 }),
+			setPointerCapture: () => {}
+		}) as unknown as HTMLElement;
+		const unbind = bindInput(element, { onHold: (action, down) => held.push(`${down ? 'hold' : 'let go'} ${action}`) });
+		const key = (type: string, key: string, repeat = false) =>
+			target.dispatchEvent(Object.assign(new Event(type), { key, repeat, preventDefault: () => {} }));
+		return { target, element, held, key, unbind };
+	}
+
+	it('reports a key going down once, however long it repeats, and coming back up', () => {
+		const { held, key } = bind();
+		key('keydown', 'ArrowLeft');
+		key('keydown', 'ArrowLeft', true);
+		key('keydown', 'ArrowLeft', true);
+		key('keyup', 'ArrowLeft');
+		expect(held).toEqual(['hold left', 'let go left']);
+	});
+
+	it('keeps an action held while any of its keys is down', () => {
+		const { held, key } = bind();
+		key('keydown', 'ArrowRight');
+		key('keydown', 'd');
+		key('keyup', 'ArrowRight');
+		expect(held).toEqual(['hold right']);
+		key('keyup', 'D'); // Shift came down in between
+		expect(held).toEqual(['hold right', 'let go right']);
+	});
+
+	it('lets go of every held key when the window loses focus', () => {
+		const { target, held, key } = bind();
+		key('keydown', 'a');
+		key('keydown', ' ');
+		target.dispatchEvent(new Event('blur'));
+		expect(held).toEqual(['hold left', 'hold action', 'let go left', 'let go action']);
+		key('keyup', 'a'); // already let go
+		expect(held).toHaveLength(4);
+	});
+
+	it('reports on-screen buttons going down and being let go, but not their repeats', () => {
+		const { held, unbind } = bind();
+		sendAction('right');
+		sendAction('right', true);
+		releaseAction('right');
+		expect(held).toEqual(['hold right', 'let go right']);
+		unbind();
+		sendAction('left');
+		expect(held).toHaveLength(2);
+	});
+
+	it('does not report swipes, which cannot be held', () => {
+		const { element, held } = bind();
+		const pointer = (type: string, clientX: number) =>
+			element.dispatchEvent(Object.assign(new Event(type), { pointerId: 1, button: 0, clientX, clientY: 0 }));
+		pointer('pointerdown', 0);
+		pointer('pointermove', 80);
+		pointer('pointerup', 80);
+		expect(held).toEqual([]);
 	});
 });

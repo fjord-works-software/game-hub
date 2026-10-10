@@ -25,6 +25,7 @@ The project is on SvelteKit 3.0.1. Many docs, examples, and AI-model defaults as
 1. Snake
 2. Falling Blocks (a falling-block puzzle, deliberately not named after the trademarked original)
 3. Buck Fever (an 8-bit deer-hunting shooting gallery; planned as "Deer Hunter", renamed because that's an existing game series)
+4. Brick Bash (paddle-and-ball brick breaking, deliberately not named after Breakout or BlackBerry's BrickBreaker)
 
 Each game is self-contained; do not build all three at once. Scaffold the architecture first, implement Snake fully, confirm it works, then move to the next.
 
@@ -53,6 +54,11 @@ src/
       buck-fever/
         BuckFever.svelte
         art.ts                     # the pixel art, drawn in code (no image files)
+        logic.ts
+        logic.test.ts
+        thumbnail.png
+      brick-bash/
+        BrickBash.svelte
         logic.ts
         logic.test.ts
         thumbnail.png
@@ -111,7 +117,7 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
 
 3. **Shared game loop.** All games use the same `gameLoop.ts` helper (fixed-timestep `requestAnimationFrame` wrapper) rather than each game writing its own loop.
 
-4. **Unified input handling.** `input.ts` provides a single interface for keyboard arrows/WASD and touch swipe gestures, so every game supports both phone touch and (if used) desktop keyboard without duplicating input code. Players who prefer buttons to swipes can turn on an on-screen D-pad from the pause menu (one setting for all games, off by default). A game opts in by describing its buttons in the registry's `controls` (a `TouchLayout`: the D-pad directions it uses plus any labelled buttons, each sending an action); `TouchControls.svelte` sends presses through `sendAction`, so they reach the game's `bindInput` handlers exactly like key presses and the game needs no code for them. Held buttons repeat like held keys, with `repeat` set, so games ignore repeats for actions that shouldn't repeat. Swipes keep working while the buttons are shown. `input.ts` also reports flicks (a fast swipe released quickly) through `onFlick`, alongside the swipes they make, and presses (the moment a finger or mouse button goes down, before any tap) through `onPress`.
+4. **Unified input handling.** `input.ts` provides a single interface for keyboard arrows/WASD and touch swipe gestures, so every game supports both phone touch and (if used) desktop keyboard without duplicating input code. Players who prefer buttons to swipes can turn on an on-screen D-pad from the pause menu (one setting for all games, off by default). A game opts in by describing its buttons in the registry's `controls` (a `TouchLayout`: the D-pad directions it uses plus any labelled buttons, each sending an action); `TouchControls.svelte` sends presses through `sendAction`, so they reach the game's `bindInput` handlers exactly like key presses and the game needs no code for them. Held buttons repeat like held keys, with `repeat` set, so games ignore repeats for actions that shouldn't repeat. Swipes keep working while the buttons are shown. `input.ts` also reports flicks (a fast swipe released quickly) through `onFlick`, alongside the swipes they make, and presses (the moment a finger or mouse button goes down, before any tap) through `onPress`. For movement that lasts as long as a key or on-screen button is held (a paddle), `onHold` reports each action going down and coming back up; swipes aren't reported there, since they can't be held.
 
 5. **Consistent shell.** `GameShell.svelte` wraps every game with the same pause menu, score display, and back-to-menu button, so games only render their own play area.
 
@@ -217,6 +223,14 @@ Deployment comes in Phase 1 rather than last, so base-path and GitHub Pages prob
 - Layout (rule 8): a wide, low-resolution 8-bit scene (320x180, scaled to fill the play area: up by the next whole number with hard edges, then smoothly down to fit) suits a phone held sideways. Held upright it letterboxes into a small strip. Orientation can't be locked per game (iOS doesn't support locking, and the manifest's `orientation` would apply to every game), so show a "turn your phone sideways" hint when the play area is taller than it is wide.
 - Aiming: on touch, tap to shoot. On desktop, `onPointerMove` drives a crosshair and a click shoots; arrow keys also move the crosshair and Space shoots. Shots fire on contact through `onPress` (a core addition to `input.ts`, in its own commit), since a tap only registers when the finger lifts. Convert points to world coordinates with the drawing scale and offset, and keep hit areas at least 44 CSS px on a phone, enlarging them beyond the sprite if needed.
 - **Done when:** the Phase 4 checks pass for Buck Fever, and Snake and Falling Blocks still pass them.
+
+### Phase 7 — Brick Bash (after Phase 6 sign-off)
+- Same pattern: `brick-bash/logic.ts` with tests, then `BrickBash.svelte`, then one registry entry, then a thumbnail recipe.
+- Rules (built): 3 balls. Five hand-made levels (a rainbow wall, a pyramid, a checkerboard, a space invader, a fortress), 12 bricks across; after the last they come round again, each level starting 6% faster than the one before, up to 50% faster. Grey tough bricks take two hits and crack after the first. Where the ball lands on the paddle sets its angle: straight up from the middle, up to 60 degrees off at the ends, so it never goes flat. Each brick hit speeds the ball up 1%, up to 35% over the level's speed; a lost ball resets it. Bricks score 10 (blue, cyan) to 50 (red), 60 for a tough one; clearing a level scores 100 times the level. No power-ups.
+- Physics: a 240x320 world with a square ball, moved in steps of at most 2 world px, one axis at a time, so it bounces off the side of a brick it actually hit and can't skip through a row at any speed.
+- Layout (rule 8): a tall field, scaled to fit with crisp edges snapped to device pixels. It suits a phone held upright; held sideways it's smaller but still playable.
+- Controls: the paddle follows a finger dragged anywhere on the play area, or the mouse; tap, click, Space, Enter, Up or a swipe up launches. Arrow keys move the paddle while held, through `onHold` (a core addition to `input.ts`; on-screen buttons report being let go through `releaseAction`). On-screen Left, Right and Launch buttons are offered; the D-pad row now holds only the directions a game uses.
+- **Done when:** the Phase 4 checks pass for Brick Bash, and the other three games still pass them.
 
 ## Explicitly Out of Scope for Now
 - Sound (see Phase 6)

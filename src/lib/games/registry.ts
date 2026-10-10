@@ -1,6 +1,7 @@
 import type { Component } from 'svelte';
 import type { TouchLayout } from '../core/input';
 import type { GameProps } from '../core/types';
+import brickBashThumbnail from './brick-bash/thumbnail.png';
 import buckFeverThumbnail from './buck-fever/thumbnail.png';
 import fallingBlocksThumbnail from './falling-blocks/thumbnail.png';
 import snakeThumbnail from './snake/thumbnail.png';
@@ -46,5 +47,16 @@ export const games: GameEntry[] = [
 		// Tap or click to shoot, so no on-screen buttons (keyboard players aim with the arrows).
 		component: () => import('./buck-fever/BuckFever.svelte'),
 		thumbnail: buckFeverThumbnail
+	},
+	{
+		slug: 'brick-bash',
+		name: 'Brick Bash',
+		// Drag or move the mouse to steer, and tap or click to launch; the buttons are for holding instead.
+		component: () => import('./brick-bash/BrickBash.svelte'),
+		thumbnail: brickBashThumbnail,
+		controls: {
+			dpad: ['left', 'right'],
+			buttons: [{ action: 'action', label: 'Launch' }]
+		}
 	}
 ];
