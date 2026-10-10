@@ -1,7 +1,7 @@
 # Offline Game Hub — Project Plan
 
 ## Overview
-A PWA built with SvelteKit that hosts multiple browser games, installable and fully playable offline (no Wi-Fi / low signal). Games are added one at a time via a plugin-style registry so new games never require touching existing code. Hosted on GitHub Pages as a static site.
+A PWA built with SvelteKit that hosts multiple browser games, installable and fully playable offline (no Wi-Fi / low signal). Games are added one at a time via a plugin-style registry so new games never require touching existing code. Hosted on GitHub Pages as a static site at `https://games.fjordworkssoftware.com/`.
 
 ## Tech Stack
 - SvelteKit 3 with `adapter-static` (some APIs differ from SvelteKit 2 — see **SvelteKit 3 Notes**)
@@ -10,7 +10,7 @@ A PWA built with SvelteKit that hosts multiple browser games, installable and fu
 - SvelteKit's built-in service worker support (`src/service-worker/index.ts` + `$app/manifest`) for offline caching
 - `localStorage` for optional per-game persistence
 - Vitest for unit tests of game logic and core modules
-- GitHub Pages for hosting (repo: `game-hub`, deployed by GitHub Actions)
+- GitHub Pages for hosting (repo: `game-hub`, deployed by GitHub Actions, on the custom domain `games.fjordworkssoftware.com`)
 
 ## SvelteKit 3 Notes
 The project is on SvelteKit 3.0.1. Many docs, examples, and AI-model defaults assume SvelteKit 2. Where they disagree, follow these:
@@ -18,7 +18,7 @@ The project is on SvelteKit 3.0.1. Many docs, examples, and AI-model defaults as
 - The library alias is `#lib` (defined in `package.json` `imports`), not `$lib`. It's a Node subpath import, so it doesn't add extensions: import `#lib/games/registry.ts`, not `#lib/games/registry`. Inside `src/lib`, use relative imports.
 - The `$service-worker` module is gone. Use `immutable`, `assets`, and `prerendered` from `$app/manifest`; `version` from `$app/env`; and `self` from `$app/service-worker`.
 - The service worker is its own TypeScript project: `src/service-worker/index.ts` next to a `tsconfig.json` that extends `$app/tsconfig/service-worker`, with `src/service-worker` excluded from the root `tsconfig.json`. `npm run check` type-checks it separately with `tsc -p src/service-worker`.
-- `$app/paths` no longer exports `base`. Build internal links with `resolve()` and static-file URLs with `asset()` from `$app/paths`, so they work under `/game-hub`. `asset()` takes paths without a leading slash (`asset('manifest.json')`), and `resolve()` is typed for app routes only, so it can't resolve build-file paths.
+- `$app/paths` no longer exports `base`. Build internal links with `resolve()` and static-file URLs with `asset()` from `$app/paths`, so they work under any base path. `asset()` takes paths without a leading slash (`asset('manifest.json')`), and `resolve()` is typed for app routes only, so it can't resolve build-file paths.
 - When unsure about an API, check `node_modules/@sveltejs/kit/types/index.d.ts` or current docs, not memory.
 
 ## Initial Games (build in this order)
@@ -127,7 +127,7 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
    - sizes text and anything else drawn on the canvas relative to the board, and makes any on-screen control or tap target at least 44 CSS px (`--touch-target`).
 
 ## PWA / Offline Requirements
-- Use `adapter-static` with `paths.base` read from a `BASE_PATH` environment variable: `/game-hub` in the deploy workflow, empty in local dev.
+- Use `adapter-static` with `paths.base` read from a `BASE_PATH` environment variable. It's empty everywhere now (the site is served from the root of its own domain); it's kept so the site can still be built for hosting under a path.
 - Use SvelteKit's built-in service worker (`src/service-worker/index.ts`) and precache everything listed in `$app/manifest` (`immutable`, `assets`, `prerendered`) on install — do not hand-maintain a cache list.
 - `static/manifest.json` must include name, short_name, start_url and scope set to `"./"` (relative to the manifest, so they respect the base path without hardcoding it), display: "standalone", background/theme colors, and icons at minimum 192x192 and 512x512.
 - Verify the app loads and is playable with network fully disabled after first visit (test via DevTools offline mode).
@@ -135,7 +135,9 @@ Core modules get tests too, as `*.test.ts` files next to the module they cover.
 ## Deployment
 - GitHub Pages via a GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs type checks, tests, and `npm run build`, then publishes `build/` with `actions/upload-pages-artifact` and `actions/deploy-pages`.
 - In the GitHub repo settings, set Pages → Source to "GitHub Actions".
-- The GitHub account has a custom domain, so the site is served at `https://fjordworkssoftware.com/game-hub/` (the `github.io` URL redirects there). That origin is shared with every other project site on the domain, and so are its Cache Storage and `localStorage`. The service worker's caches and the storage keys must be prefixed with `game-hub` (see Phases 2 and 3).
+- The site is served at `https://games.fjordworkssoftware.com/`: a DNS CNAME record points `games` at `fjord-works-software.github.io`, and the repo's Pages settings set it as the custom domain with HTTPS enforced. Sites deployed by a workflow ignore a `CNAME` file, so the repo doesn't have one.
+- Until October 2026 the site was served at `https://fjordworkssoftware.com/game-hub/`, sharing an origin (and so Cache Storage and `localStorage`) with every other project site on that domain. That's why the service worker's caches and the storage keys are prefixed with `game-hub` (see Phases 2 and 3). The prefixes are kept: they're harmless, and the site can be hosted under a path again.
+- Moving to a new address starts players over: scores and settings stay with the old origin, and an app installed from the old address keeps serving its cached copy, so it has to be deleted and reinstalled from the new one.
 
 ## CLI Commands to Scaffold the Project
 
@@ -168,7 +170,7 @@ Deployment comes in Phase 1 rather than last, so base-path and GitHub Pages prob
 - In `vite.config.ts`, replace `adapter-auto` with `adapter-static` and set `paths.base` from `BASE_PATH`. Uninstall `@sveltejs/adapter-auto`.
 - Add `src/routes/+layout.ts` with `export const prerender = true;`.
 - Replace the scaffold's welcome page with a placeholder home page.
-- Add `.github/workflows/deploy.yml`: `npm ci`, `npm run check`, `npm run build` with `BASE_PATH=/game-hub`, then upload `build/` and deploy.
+- Add `.github/workflows/deploy.yml`: `npm ci`, `npm run check`, `npm run build` with `BASE_PATH=/game-hub`, then upload `build/` and deploy. (Since the move to `games.fjordworkssoftware.com`, the build sets no `BASE_PATH`; see **Deployment**.)
 - **Done when:** `https://<user>.github.io/game-hub/` loads, and every asset request resolves under `/game-hub/` with no 404s.
 
 ### Phase 2 — Install and offline support

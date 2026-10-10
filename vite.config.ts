@@ -15,7 +15,8 @@ export default defineConfig({
 			adapter: adapter(),
 
 			paths: {
-				// The deploy workflow sets BASE_PATH=/game-hub to match the GitHub Pages URL; empty in local dev.
+				// Empty: the site is served from the root of games.fjordworkssoftware.com. Set BASE_PATH
+				// (e.g. /game-hub) only to build for hosting under a path.
 				base: (process.env.BASE_PATH ?? '') as '' | `/${string}`
 			}
 		})

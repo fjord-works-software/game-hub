@@ -2,14 +2,15 @@ import { version } from '$app/env';
 import { assets, immutable, prerendered } from '$app/manifest';
 import { self } from '$app/service-worker';
 
-// The origin is shared with other sites on fjordworkssoftware.com, and so is Cache Storage.
-// Every cache this worker creates or deletes carries this prefix so other sites' caches are never touched.
+// Every cache this worker creates or deletes carries this prefix, so it never touches caches that
+// aren't its own (the site used to share an origin with other sites, and could again).
 const CACHE_PREFIX = 'game-hub-';
 const CACHE = `${CACHE_PREFIX}${version}`;
 
-// The worker is served from the base path (e.g. /game-hub/service-worker.js) and `$app/manifest`
-// paths are relative to it, so resolve them against the worker's directory. The home page's path
-// is '' and becomes '/game-hub/', the URL Pages serves without a redirect.
+// The worker is served from the base path (/service-worker.js, or e.g. /game-hub/service-worker.js
+// under a path) and `$app/manifest` paths are relative to it, so resolve them against the worker's
+// directory. The home page's path is '' and becomes '/' (or '/game-hub/', the URL Pages serves
+// without a redirect).
 const ROOT = new URL('./', self.location.href);
 const toPathname = (path: string) => new URL(path, ROOT).pathname;
 
